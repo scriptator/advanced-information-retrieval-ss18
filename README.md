@@ -1,1 +1,1 @@
-# advanced-information-retrieval-ws17
+# advanced-information-retrieval-ss17
