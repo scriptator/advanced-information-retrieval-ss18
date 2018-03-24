@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
 import argparse
+import pickle
+
+from air18.segments import segment_keys
 
 
 def parse_args():
@@ -27,6 +30,19 @@ def parse_args():
 def main():
     params = parse_args()
     # TODO
+
+    # load indexes
+    segment_indexes = {}
+    for seg_key in segment_keys:
+        segment_indexes[seg_key] = pickle.load(open("index_" + str(seg_key) + ".p", "rb"))
+
+    # print indexes
+    for _, segment_index in segment_indexes.items():
+        if segment_index:
+            for token, docs in segment_index.items():
+                print("token: " + token)
+                for doc in docs:
+                    print(doc)
 
 
 if __name__ == '__main__':

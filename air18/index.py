@@ -5,6 +5,9 @@ import os
 import collections
 import re
 import xml.etree.ElementTree as ET
+import pickle
+
+from air18.segments import segment_key, segment_keys
 
 
 def parse_args():
@@ -70,19 +73,6 @@ def create_index(doc_tokens):
     return index
 
 
-segment_keys = ['a', 'f', 'k', 'p', 'u', 'z', 256]
-
-
-def segment_key(doc_token):
-    t = doc_token[1][0].lower()
-    for segment_highest_key in segment_keys:
-        if t <= segment_highest_key:
-            return segment_highest_key
-
-    # ISO 8859-1 encoding should not allow values higher 256
-    raise IndexError
-
-
 def map(file):
     segments = collections.defaultdict(list)
 
@@ -118,16 +108,18 @@ def main():
         for key, segment in segments.items():
             reducer_segments[key] += segment
 
-    segment_indexes = [reduce(segment) for _, segment in reducer_segments.items()]
+    segment_indexes = {seg_key : reduce(segment) for seg_key, segment in reducer_segments.items()}
 
-    # print index
-    for segment_index in segment_indexes:
+    # print indexes
+    for _, segment_index in segment_indexes.items():
         for token, docs in segment_index.items():
             print("token: " + token)
             for doc in docs:
                 print(doc)
 
-    # TODO: save index
+    # save indexes, simple strategy: using pickle
+    for seg_key in segment_keys:
+        pickle.dump(segment_indexes.get(seg_key), open("index_" + seg_key + ".p", "wb"))
 
 
 if __name__ == '__main__':
