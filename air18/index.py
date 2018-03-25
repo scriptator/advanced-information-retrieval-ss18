@@ -47,10 +47,9 @@ def parse_and_process_text(text, params):
     tokens = re.split('[^a-zA-Z0-9]', text)
     tokens = list(filter(None, tokens))
 
-    # TODO: special strings?
-
-    # TODO: techniques combinations:
-    # case folding
+    # case folding, simple strategy: all words to lowercase
+    if params.case_folding:
+        tokens = [token.lower() for token in tokens]
 
     # removing stop words
     if params.stop_words:
