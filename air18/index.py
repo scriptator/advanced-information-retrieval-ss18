@@ -7,6 +7,8 @@ import re
 import xml.etree.ElementTree as ET
 import pickle
 
+from nltk.stem import PorterStemmer, WordNetLemmatizer
+
 from air18.segments import segment_key, segment_keys
 
 
@@ -26,7 +28,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def parse_and_process_file(file):
+def parse_and_process_file(file, params):
     doc_tokens = []
 
     with open(file) as f:
@@ -35,12 +37,12 @@ def parse_and_process_file(file):
             docno = doc.find("DOCNO").text.strip()
             text = "\n".join(doc.find("TEXT").itertext())
 
-            doc_tokens += [(docno, token) for token in parse_and_process_text(text)]
+            doc_tokens += [(docno, token) for token in parse_and_process_text(text, params)]
 
     return doc_tokens
 
 
-def parse_and_process_text(text):
+def parse_and_process_text(text, params):
     # tokenize, very simple strategy: split on all non-alphanumeric characters
     tokens = re.split('[^a-zA-Z0-9]', text)
     tokens = list(filter(None, tokens))
@@ -49,9 +51,21 @@ def parse_and_process_text(text):
 
     # TODO: techniques combinations:
     # case folding
+
     # removing stop words
-    # stemming (library)
-    # lemmatization (library)
+    if params.stop_words:
+        from air18.stopwords import stop_words_en
+        tokens = [token for token in tokens if token not in stop_words_en]
+
+    # stemming
+    if params.stemming:
+        stemmer = PorterStemmer()
+        tokens = [stemmer.stem(token) for token in tokens]
+
+    # lemmatization
+    if params.lemmatization:
+        lemmatizer = WordNetLemmatizer()
+        tokens = [lemmatizer.lemmatize(token) for token in tokens]
 
     return tokens
 
@@ -73,10 +87,10 @@ def create_index(doc_tokens):
     return index
 
 
-def map(file):
+def map(file, params):
     segments = collections.defaultdict(list)
 
-    doc_tokens = parse_and_process_file(file)
+    doc_tokens = parse_and_process_file(file, params)
     for doc_token in doc_tokens:
         segments[segment_key(doc_token)].append(doc_token)
 
@@ -101,7 +115,7 @@ def main():
         else:
             raise FileNotFoundError
 
-    mapper_segments = [map(file) for file in files]
+    mapper_segments = [map(file, params) for file in files]
 
     reducer_segments = collections.defaultdict(list)
     for segments in mapper_segments:
