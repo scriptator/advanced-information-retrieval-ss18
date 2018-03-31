@@ -93,15 +93,20 @@ def create_index(doc_tokens):
     # simple index without major performance considerations
     index = collections.defaultdict(set)
 
-    for doc_token in doc_tokens:
-        index[doc_token[1]].add(doc_token[0])
+    for docid, token in doc_tokens:
+        index[token].add(docid)
 
     for token in index:
         index[token] = sorted(index[token])
 
-    # TODO: improvements:
+    # TODO: implement the following variants:
     # Simple posting list, Hash or B-Tree dictionary
+
     # Single Pass In Memory Indexing
+    # Can't be simply embedded in a reduce function, can it? I think it needs a whole different approach
+
+    # Map Reduce
+    # this is done in the current version
 
     return index
 
