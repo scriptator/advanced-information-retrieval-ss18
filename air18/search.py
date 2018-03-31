@@ -5,6 +5,8 @@ import pickle
 
 import os
 
+import itertools
+
 from air18.segments import segment_keys, SegmentFile
 from air18.topics import parse_topics
 
@@ -48,13 +50,16 @@ def main():
     topics = parse_topics(params.topics_file, index_params.case_folding,
                           index_params.stop_words, index_params.stemming,
                           index_params.lemmatization)
-    # TODO
+    all_search_tokens = set(itertools.chain.from_iterable(topics.values()))
 
-    # load indexes
+    # load indexes and keep only the relevant parts in memory
     segment_indexes = {}
     for seg_key in segment_keys:
         with SegmentFile(seg_key) as segment_file:
-            segment_indexes[seg_key] = pickle.load(segment_file)
+            segment = pickle.load(segment_file)
+            segment = segment if segment is not None else {}
+            filtered_segment = {token: postings for token, postings in segment.items() if token in all_search_tokens}
+            segment_indexes[seg_key] = filtered_segment
 
     # print indexes
     for _, segment_index in segment_indexes.items():
