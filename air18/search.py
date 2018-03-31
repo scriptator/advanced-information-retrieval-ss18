@@ -5,7 +5,7 @@ import pickle
 
 import os
 
-from air18.segments import segment_keys
+from air18.segments import segment_keys, SegmentFile
 from air18.topics import parse_topics
 
 
@@ -37,13 +37,13 @@ def parse_args():
 
 def main():
     params = parse_args()
-    g
+
     # load index params to figure out how to process query tokens
     settings_file_path = "../indexed_data/settings.p"
     if not os.path.isfile(settings_file_path):
         raise FileNotFoundError("Indexing settings file not found. Make sure"
                                 "that indexing has finished successfully before you start a search.")
-    with open(settings_file_path, "w") as settings_file:
+    with open(settings_file_path, "rb") as settings_file:
         index_params = pickle.load(settings_file)
     topics = parse_topics(params.topics_file, index_params.case_folding,
                           index_params.stop_words, index_params.stemming,
@@ -53,7 +53,8 @@ def main():
     # load indexes
     segment_indexes = {}
     for seg_key in segment_keys:
-        segment_indexes[seg_key] = pickle.load(open("index_" + str(seg_key) + ".p", "rb"))
+        with SegmentFile(seg_key) as segment_file:
+            segment_indexes[seg_key] = pickle.load(segment_file)
 
     # print indexes
     for _, segment_index in segment_indexes.items():

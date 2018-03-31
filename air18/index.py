@@ -120,11 +120,11 @@ def main():
 
     # save indexes, simple strategy: using pickle
     for seg_key in segment_keys:
-        with SegmentFile(seg_key) as segment_file:
+        with SegmentFile(seg_key, mode="wb") as segment_file:
             pickle.dump(segment_indexes.get(seg_key), segment_file)
 
     # save params so that the search script knows how to process query tokens
-    with open("../indexed_data/settings.p", "w") as settings_file:
+    with open("../indexed_data/settings.p", "wb") as settings_file:
         pickle.dump(params, settings_file)
 
 

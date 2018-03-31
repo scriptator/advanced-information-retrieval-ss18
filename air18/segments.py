@@ -15,11 +15,11 @@ def segment_key(doc_token):
 
 
 class SegmentFile:
-    def __init__(self, key):
+    def __init__(self, key, mode="rb"):
         os.makedirs("../indexed_data/", exist_ok=True)
         self.filename = "../indexed_data/index_{}.p".format(key)
         self.key = key
-        self.mode = "wb"
+        self.mode = mode
 
     def __enter__(self):
         self.segment_file = open(self.filename, self.mode)
