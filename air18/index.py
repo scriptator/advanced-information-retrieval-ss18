@@ -3,16 +3,13 @@
 import argparse
 import glob
 import json
-import os
 import collections
-import re
 import xml.etree.ElementTree as ET
 import pickle
-
 import itertools
-from nltk.stem import PorterStemmer, WordNetLemmatizer
 
 from air18.segments import segment_key, segment_keys, SegmentFile
+from air18.token import tokenize
 
 
 def parse_args():
@@ -40,7 +37,8 @@ def parse_and_process_file(file, params):
                 data = parse_xml(f)
 
             for docno, text in data:
-                for token in parse_and_process_text(text, params):
+                for token in tokenize(text, params.case_folding, params.stop_words,
+                                      params.stemming, params.lemmatization):
                     yield (docno, token)
 
 
@@ -60,33 +58,6 @@ def parse_json(file):
         # Documents that do not have a <TEXT> tag can be ignored
         if doc["text"] is not None:
             yield doc["docno"], doc["text"]
-
-
-def parse_and_process_text(text, params):
-    # tokenize, very simple strategy: split on all non-alphanumeric characters
-    tokens = re.split('[^a-zA-Z0-9]', text)
-    tokens = filter(None, tokens)
-
-    # case folding, simple strategy: all words to lowercase
-    if params.case_folding:
-        tokens = map(lambda token: token.lower(), tokens)
-
-    # removing stop words
-    if params.stop_words:
-        from air18.stopwords import stop_words_en
-        tokens = filter(lambda token: token not in stop_words_en, tokens)
-
-    # stemming
-    if params.stemming:
-        stemmer = PorterStemmer()
-        tokens = map(stemmer.stem, tokens)
-
-    # lemmatization
-    if params.lemmatization:
-        lemmatizer = WordNetLemmatizer()
-        tokens = map(lemmatizer.lemmatize, tokens)
-
-    return tokens
 
 
 def create_index(doc_tokens):
@@ -151,6 +122,10 @@ def main():
     for seg_key in segment_keys:
         with SegmentFile(seg_key) as segment_file:
             pickle.dump(segment_indexes.get(seg_key), segment_file)
+
+    # save params so that the search script knows how to process query tokens
+    with open("../indexed_data/settings.p", "w") as settings_file:
+        pickle.dump(params, settings_file)
 
 
 if __name__ == '__main__':

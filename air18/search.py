@@ -3,14 +3,22 @@
 import argparse
 import pickle
 
+import os
+
 from air18.segments import segment_keys
+from air18.topics import parse_topics
+
+
+DEFAULT_TOPIC_FILE=os.path.join(os.path.dirname(__file__), "topicsTREC8Adhoc.txt")
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("topic", type=argparse.FileType,
-                        help="the topic file containing the query")
+    parser.add_argument("--topics-file", "-t", type=argparse.FileType(),
+                        help="the topic file containing the query",
+                        required=False,
+                        default=DEFAULT_TOPIC_FILE)
 
     subparsers = parser.add_subparsers(dest="similarity_function", title="similarity function")
     subparsers.required = True
@@ -29,6 +37,17 @@ def parse_args():
 
 def main():
     params = parse_args()
+    g
+    # load index params to figure out how to process query tokens
+    settings_file_path = "../indexed_data/settings.p"
+    if not os.path.isfile(settings_file_path):
+        raise FileNotFoundError("Indexing settings file not found. Make sure"
+                                "that indexing has finished successfully before you start a search.")
+    with open(settings_file_path, "w") as settings_file:
+        index_params = pickle.load(settings_file)
+    topics = parse_topics(params.topics_file, index_params.case_folding,
+                          index_params.stop_words, index_params.stemming,
+                          index_params.lemmatization)
     # TODO
 
     # load indexes
