@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 
 import argparse
+import glob
+import json
 import os
 import collections
 import re
 import xml.etree.ElementTree as ET
 import pickle
 
+import itertools
 from nltk.stem import PorterStemmer, WordNetLemmatizer
 
-from air18.segments import segment_key, segment_keys
+from air18.segments import segment_key, segment_keys, SegmentFile
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("files",
+    parser.add_argument("patterns",
                         nargs="+",
                         help="the directory (recursively) containing files or a single file in XML format to index")
     parser.add_argument("--case-folding", action="store_true", help="apply case folding")
@@ -29,42 +32,59 @@ def parse_args():
 
 
 def parse_and_process_file(file, params):
-    doc_tokens = []
+    print("Parsing file {}".format(file))
+    with open(file, encoding="iso-8859-1") as f:
+            if file.endswith(".json"):
+                data = parse_json(f)
+            else:
+                data = parse_xml(f)
 
-    with open(file) as f:
-        root = ET.fromstringlist(["<ROOT>", f.read(), "</ROOT>"])
-        for doc in root.findall("DOC"):
-            docno = doc.find("DOCNO").text.strip()
-            text = "\n".join(doc.find("TEXT").itertext())
+            for docno, text in data:
+                for token in parse_and_process_text(text, params):
+                    yield (docno, token)
 
-            doc_tokens += [(docno, token) for token in parse_and_process_text(text, params)]
 
-    return doc_tokens
+def parse_xml(file):
+    root = ET.fromstringlist(["<ROOT>", file.read(), "</ROOT>"])
+    for doc in root.findall("DOC"):
+        docno = doc.find("DOCNO").text.strip()
+        text = "\n".join(doc.find("TEXT").itertext())
+        # Documents that do not have a <TEXT> tag can be ignored
+        if text != "":
+            yield docno, text
+
+
+def parse_json(file):
+    doclist = json.load(file)
+    for doc in doclist:
+        # Documents that do not have a <TEXT> tag can be ignored
+        if doc["text"] is not None:
+            yield doc["docno"], doc["text"]
 
 
 def parse_and_process_text(text, params):
     # tokenize, very simple strategy: split on all non-alphanumeric characters
     tokens = re.split('[^a-zA-Z0-9]', text)
-    tokens = list(filter(None, tokens))
+    tokens = filter(None, tokens)
 
     # case folding, simple strategy: all words to lowercase
     if params.case_folding:
-        tokens = [token.lower() for token in tokens]
+        tokens = map(lambda token: token.lower(), tokens)
 
     # removing stop words
     if params.stop_words:
         from air18.stopwords import stop_words_en
-        tokens = [token for token in tokens if token not in stop_words_en]
+        tokens = filter(lambda token: token not in stop_words_en, tokens)
 
     # stemming
     if params.stemming:
         stemmer = PorterStemmer()
-        tokens = [stemmer.stem(token) for token in tokens]
+        tokens = map(stemmer.stem, tokens)
 
     # lemmatization
     if params.lemmatization:
         lemmatizer = WordNetLemmatizer()
-        tokens = [lemmatizer.lemmatize(token) for token in tokens]
+        tokens = map(lemmatizer.lemmatize, tokens)
 
     return tokens
 
@@ -86,11 +106,10 @@ def create_index(doc_tokens):
     return index
 
 
-def map(file, params):
+def segmentize(file, params):
     segments = collections.defaultdict(list)
 
-    doc_tokens = parse_and_process_file(file, params)
-    for doc_token in doc_tokens:
+    for doc_token in parse_and_process_file(file, params):
         segments[segment_key(doc_token)].append(doc_token)
 
     return segments
@@ -104,17 +123,10 @@ def main():
     params = parse_args()
 
     # get all files in specified directories recursively
-    files = []
-    for file in params.files:
-        if os.path.isfile(file):
-            files.append(file)
-        elif os.path.isdir(file):
-            for _, _, dirfiles in os.walk(file):
-                files += dirfiles
-        else:
-            raise FileNotFoundError
-
-    mapper_segments = [map(file, params) for file in files]
+    files = itertools.chain.from_iterable(
+        glob.iglob('{}/**/*'.format(pattern), recursive=True)
+        for pattern in params.patterns)
+    mapper_segments = [segmentize(file, params) for file in files]
 
     reducer_segments = collections.defaultdict(list)
     for segments in mapper_segments:
@@ -132,7 +144,8 @@ def main():
 
     # save indexes, simple strategy: using pickle
     for seg_key in segment_keys:
-        pickle.dump(segment_indexes.get(seg_key), open("index_" + seg_key + ".p", "wb"))
+        with SegmentFile(seg_key) as segment_file:
+            pickle.dump(segment_indexes.get(seg_key), segment_file)
 
 
 if __name__ == '__main__':
