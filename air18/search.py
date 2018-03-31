@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import operator
 import pickle
 
 import os
@@ -23,6 +24,9 @@ def parse_args():
                         help="the topic file containing the query",
                         required=False,
                         default=DEFAULT_TOPIC_FILE)
+    parser.add_argument("--show", type=int, default=1000,
+                        help="Maximum number of documents to output per topic")
+    parser.add_argument("--run-name", default="DefaultRun")
 
     subparsers = parser.add_subparsers(dest="similarity_function", title="similarity function")
     subparsers.required = True
@@ -42,9 +46,19 @@ def parse_args():
     return parser.parse_args()
 
 
+def print_output(topic_id, sorted_scores, run_name, max_docs_per_topic):
+    for rank, (docid, score) in enumerate(itertools.islice(sorted_scores, max_docs_per_topic)):
+        print("{topic_id} Q0 {document_id} {rank} {score} {run_name}".format(
+            topic_id=topic_id, document_id=docid, rank=rank, score=score,
+            run_name=run_name
+        ))
+
+
 def main():
     params = parse_args()
     scoring_function = params.scoring_function
+    max_docs_per_topic = params.show
+    run_name = params.run_name
 
     # load index params to figure out how to process query tokens
     settings_file_path = "../indexed_data/settings.p"
@@ -72,18 +86,19 @@ def main():
             index.update(filtered_segment)
 
     # final score per document is sum of scores s_t,f occurring in query and document
-    scores = defaultdict(float)
-    for search_term in all_search_terms:
-        # ignore term if it is not contained in any document
-        if search_term in index:
-            postings = index[search_term]
-            df_t = len(postings)
-            for docid, tf in postings:
-                score = scoring_function(tf_td=tf, df_t=df_t,
-                                         collection_statistics=collection_statistics)
-                scores[docid] += score
-
-    print(scores)
+    for topic_num, terms in topics.items():
+        scores = defaultdict(float)
+        for search_term in terms:
+            # ignore term if it is not contained in any document
+            if search_term in index:
+                postings = index[search_term]
+                df_t = len(postings)
+                for docid, tf in postings:
+                    score = scoring_function(tf_td=tf, df_t=df_t,
+                                             collection_statistics=collection_statistics)
+                    scores[docid] += score
+        scores = sorted(scores.items(), key=operator.itemgetter(1), reverse=True)
+        print_output(topic_num, scores, run_name, max_docs_per_topic)
 
 
 if __name__ == '__main__':
