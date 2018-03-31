@@ -9,6 +9,7 @@ import pickle
 import itertools
 
 from air18.segments import segment_key, segment_keys, SegmentFile
+from air18.statistics import CollectionStatistics
 from air18.token import tokenize
 
 
@@ -62,13 +63,16 @@ def parse_json(file):
 
 def create_index(doc_tokens):
     # simple index without major performance considerations
-    index = collections.defaultdict(set)
+    index = collections.defaultdict(list)
 
+    # invert step: add everything to a list
     for docid, token in doc_tokens:
-        index[token].add(docid)
+        index[token].append(docid)
 
-    for token in index:
-        index[token] = sorted(index[token])
+    # convert list to tuples (docid, tf)
+    for token, postings in index.items():
+        counter = collections.Counter(postings)
+        index[token] = sorted(counter.items())
 
     # TODO: implement the following variants:
     # Simple posting list, Hash or B-Tree dictionary
@@ -95,6 +99,11 @@ def reduce(segment):
     return create_index(segment)
 
 
+def compute_collection_statistics(segment_indexes):
+    # TODO calculate properly
+    return CollectionStatistics(num_documents=100000)
+
+
 def main():
     params = parse_args()
 
@@ -110,18 +119,16 @@ def main():
             reducer_segments[key] += segment
 
     segment_indexes = {seg_key : reduce(segment) for seg_key, segment in reducer_segments.items()}
-
-    # print indexes
-    for _, segment_index in segment_indexes.items():
-        for token, docs in segment_index.items():
-            print("token: " + token)
-            for doc in docs:
-                print(doc)
+    statistics = compute_collection_statistics(segment_indexes)
 
     # save indexes, simple strategy: using pickle
     for seg_key in segment_keys:
         with SegmentFile(seg_key, mode="wb") as segment_file:
             pickle.dump(segment_indexes.get(seg_key), segment_file)
+
+    # save statistics
+    with open("../indexed_data/statistics.p", "wb") as stat_file:
+        pickle.dump(statistics, stat_file)
 
     # save params so that the search script knows how to process query tokens
     with open("../indexed_data/settings.p", "wb") as settings_file:
