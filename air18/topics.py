@@ -2,7 +2,7 @@ import functools
 import os
 import re
 
-from air18.token import tokenize
+from air18.tokens import air_tokenize
 
 NUMBER_REGEX = r"<num> Number: (4\d\d)"
 TITLE_REGEX = r"<title> (.*)"
@@ -17,7 +17,7 @@ def parse_topics(topics_file, case_folding=False, stop_words=False, stemming=Fal
     if len(numbers) != len(titles):
         raise ValueError("Topic file is invalid. Number of <num> and <title> tags must be equal")
 
-    tokenize_fun = functools.partial(tokenize, case_folding=case_folding,
+    tokenize_fun = functools.partial(air_tokenize, case_folding=case_folding,
                                      stop_words=stop_words, stemming=stemming,
                                      lemmatization=lemmatization)
     title_tokens = map(list, map(tokenize_fun, titles))

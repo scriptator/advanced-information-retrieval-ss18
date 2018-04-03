@@ -7,10 +7,12 @@ import collections
 import xml.etree.ElementTree as ET
 import pickle
 import itertools
+import os
+import shutil
 
 from air18.segments import segment_key, segment_keys, SegmentFile
 from air18.statistics import CollectionStatistics
-from air18.token import tokenize
+from air18.tokens import air_tokenize
 
 
 def parse_args():
@@ -26,6 +28,11 @@ def parse_args():
     group.add_argument("--stemming", action="store_true", help="apply stemming")
     group.add_argument("--lemmatization", action="store_true", help="apply lemmatization")
 
+    parser.add_argument("--indexing-method",
+                        choices=["simple", "spimi", "map_reduce"],
+                        required=True,
+                        help="Indexing method to use")
+
     return parser.parse_args()
 
 
@@ -38,7 +45,7 @@ def parse_and_process_file(file, params):
                 data = parse_xml(f)
 
             for docno, text in data:
-                for token in tokenize(text, params.case_folding, params.stop_words,
+                for token in air_tokenize(text, params.case_folding, params.stop_words,
                                       params.stemming, params.lemmatization):
                     yield (docno, token)
 
@@ -104,6 +111,39 @@ def compute_collection_statistics(segment_indexes):
     return CollectionStatistics(num_documents=100000)
 
 
+def simple(files, params):
+    doc_tokens = itertools.chain.from_iterable(parse_and_process_file(file, params) for file in files)
+    index = create_index(doc_tokens)
+
+    with open("../indexed_data/simple_index.p", mode="wb") as index_file:
+        pickle.dump(index, index_file)
+
+    return compute_collection_statistics(index)
+
+
+def spimi():
+    pass
+
+
+def map_reduce(files, params):
+    mapper_segments = [segmentize(file, params) for file in files]
+    reducer_segments = collections.defaultdict(list)
+    for segments in mapper_segments:
+        for key, segment in segments.items():
+            reducer_segments[key] += segment
+
+    segment_indexes = {seg_key : reduce(segment) for seg_key, segment in reducer_segments.items()}
+
+    statistics = compute_collection_statistics(segment_indexes)
+
+    # save indexes, simple strategy: using pickle
+    for seg_key in segment_keys:
+        with SegmentFile(seg_key, mode="wb") as segment_file:
+            pickle.dump(segment_indexes.get(seg_key), segment_file)
+
+    return statistics
+
+
 def main():
     params = parse_args()
 
@@ -111,20 +151,17 @@ def main():
     files = itertools.chain.from_iterable(
         glob.iglob('{}/**/*'.format(pattern), recursive=True)
         for pattern in params.patterns)
-    mapper_segments = [segmentize(file, params) for file in files]
 
-    reducer_segments = collections.defaultdict(list)
-    for segments in mapper_segments:
-        for key, segment in segments.items():
-            reducer_segments[key] += segment
+    shutil.rmtree("../indexed_data", ignore_errors=True)
+    os.makedirs("../indexed_data", exist_ok=True)
 
-    segment_indexes = {seg_key : reduce(segment) for seg_key, segment in reducer_segments.items()}
-    statistics = compute_collection_statistics(segment_indexes)
-
-    # save indexes, simple strategy: using pickle
-    for seg_key in segment_keys:
-        with SegmentFile(seg_key, mode="wb") as segment_file:
-            pickle.dump(segment_indexes.get(seg_key), segment_file)
+    statistics = None
+    if params.indexing_method == "simple":
+        statistics = simple(files, params)
+    if params.indexing_method == "spimi":
+        statistics = spimi()
+    if params.indexing_method == "map_reduce":
+        statistics = map_reduce(files, params)
 
     # save statistics
     with open("../indexed_data/statistics.p", "wb") as stat_file:

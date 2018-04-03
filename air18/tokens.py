@@ -3,8 +3,7 @@ import re
 from nltk import PorterStemmer, WordNetLemmatizer
 
 
-def tokenize(text, case_folding=False, stop_words=False, stemming=False,
-             lemmatization=False):
+def air_tokenize(text, case_folding=False, stop_words=False, stemming=False, lemmatization=False):
     # tokenize, very simple strategy: split on all non-alphanumeric characters
     tokens = re.split('[^a-zA-Z0-9]', text)
     tokens = filter(None, tokens)
