@@ -1,5 +1,7 @@
 import os
 
+from air18.paths import INDEX_BASE
+
 segment_keys = ['a', 'f', 'k', 'p', 'u', 'z', 'o']
 
 
@@ -14,8 +16,7 @@ def segment_key(doc_token):
 
 class SegmentFile:
     def __init__(self, key, mode="rb"):
-        os.makedirs("../indexed_data/", exist_ok=True)
-        self.filename = "../indexed_data/index_{}.p".format(key)
+        self.filename = os.path.join(INDEX_BASE, "index_{}.p".format(key))
         self.key = key
         self.mode = mode
 
