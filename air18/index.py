@@ -7,12 +7,15 @@ import collections
 import xml.etree.ElementTree as ET
 import pickle
 import itertools
+import more_itertools
 import os
 import shutil
+import functools
 
 from air18.segments import segment_key, segment_keys, SegmentFile
 from air18.statistics import CollectionStatistics
 from air18.tokens import air_tokenize
+from air18.blocks import BlockFile, blocksize, block_line, from_block_line
 
 
 def parse_args():
@@ -46,7 +49,7 @@ def parse_and_process_file(file, params):
 
             for docno, text in data:
                 for token in air_tokenize(text, params.case_folding, params.stop_words,
-                                      params.stemming, params.lemmatization):
+                                          params.stemming, params.lemmatization):
                     yield (docno, token)
 
 
@@ -81,15 +84,6 @@ def create_index(doc_tokens):
         counter = collections.Counter(postings)
         index[token] = sorted(counter.items())
 
-    # TODO: implement the following variants:
-    # Simple posting list, Hash or B-Tree dictionary
-
-    # Single Pass In Memory Indexing
-    # Can't be simply embedded in a reduce function, can it? I think it needs a whole different approach
-
-    # Map Reduce
-    # this is done in the current version
-
     return index
 
 
@@ -121,8 +115,85 @@ def simple(files, params):
     return compute_collection_statistics(index)
 
 
-def spimi():
-    pass
+def save_spimi_blocks(doc_tokens):
+
+    def to_docid(docno_tfs):
+        for docno, tf in docno_tfs:
+            if docno not in to_docid.mappings:
+                to_docid.max += 1
+                to_docid.mappings[docno] = to_docid.max
+            yield to_docid.mappings[docno], tf
+
+    to_docid.mappings = dict()
+    to_docid.max = 0
+
+    def sorted_by_docid(index):
+        return ((token, to_docid(docno_tfs)) for token, docno_tfs in index.items())
+
+    blocks = more_itertools.chunked(doc_tokens, blocksize)
+    block_indexes = (sorted(sorted_by_docid(create_index(block)), key = lambda i : i[0]) for block in blocks)
+
+    num_blocks = 0
+    for blockno, block_index in enumerate(block_indexes, 1):
+        with BlockFile(blockno, mode="w") as index_file:
+            for token, docid_tfs in block_index:
+                index_file.write(block_line(token, docid_tfs))
+        num_blocks = blockno
+
+    return num_blocks
+
+
+def merge_spimi_blocks(num_blocks):
+
+    def merge_docid_tfs(ds1, ds2):
+        while True:
+            d1 = next(ds1)
+            d2 = next(ds2)
+            if d1[0] == d2[0]:
+                yield d1[0], d1[1] + d2[1]
+            elif d1[0] < d2[0]:
+                ds2.send(d2)
+                yield d1
+            else:
+                ds1.send(d1)
+                yield d2
+
+    def merge_postings(p1, p2):
+        return p1[0], merge_docid_tfs(iter(p1[1]), iter(p2[1]))
+
+    block_files = {blockno: BlockFile(blockno, mode="r").open() for blockno in range(1, num_blocks + 1)}
+
+    blocks = dict()
+    for no, file in block_files.items():
+        blocks[no] = from_block_line(file.readline())
+
+    with open("../indexed_data/spimi_index.p", mode="w") as index_file:
+        while blocks:
+
+            min_token = min((posting[0] for posting in blocks.values()))
+            min_token_blocknos = (no for no, posting in blocks.items() if posting[0] == min_token)
+            min_token_postings = (posting for posting in blocks.values() if posting[0] == min_token)
+            merged_posting = functools.reduce(merge_postings, min_token_postings)
+
+            index_file.write(block_line(*merged_posting))
+
+            for no in min_token_blocknos:
+                blocks[no] = None
+
+            for no, file in block_files.items():
+                if blocks[no] is None:
+                    blocks[no] = from_block_line(file.readline())
+                    if blocks[no] is None:
+                        del blocks[no]
+
+
+def spimi(files, params):
+    doc_tokens = itertools.chain.from_iterable(parse_and_process_file(file, params) for file in files)
+
+    num_blocks = save_spimi_blocks(doc_tokens)
+    merge_spimi_blocks(num_blocks)
+
+    return None
 
 
 def map_reduce(files, params):
@@ -159,7 +230,7 @@ def main():
     if params.indexing_method == "simple":
         statistics = simple(files, params)
     if params.indexing_method == "spimi":
-        statistics = spimi()
+        statistics = spimi(files, params)
     if params.indexing_method == "map_reduce":
         statistics = map_reduce(files, params)
 

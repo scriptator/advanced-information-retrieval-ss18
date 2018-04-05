@@ -1,5 +1,3 @@
-from contextlib import contextmanager
-
 import os
 
 segment_keys = ['a', 'f', 'k', 'p', 'u', 'z', 'o']
