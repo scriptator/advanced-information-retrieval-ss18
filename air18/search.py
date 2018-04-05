@@ -87,10 +87,11 @@ def main():
     # load collection statistics
     with open(STATISTICS_FILEPATH, "rb") as stat_file:
         collection_statistics = pickle.load(stat_file)
+        collection_statistics.finalize()    # precompute values
 
     # load document lengths
-    with open(DOCUMENT_LENGTHS_PATH, "rb") as norm_file:
-        document_lengths = marshal.load(norm_file)
+    with open(DOCUMENT_STATISTICS_FILEPATH, "rb") as norm_file:
+        doc_stats = marshal.load(norm_file)
 
     # load indexes and keep only the relevant parts in memory
     if index_params.indexing_method == "map_reduce":
@@ -122,7 +123,8 @@ def main():
                 df_t = len(postings)
                 idf_t = log(collection_statistics.num_documents / df_t)
                 for docid, tf in postings:
-                    score = scoring_function(tf_td=tf, idf_t=idf_t, dl=document_lengths[docid],
+                    doc_length, doc_avgtf = doc_stats[docid]
+                    score = scoring_function(tf_td=tf, idf_t=idf_t, dl=doc_length, avgtf=doc_avgtf,
                                              collection_statistics=collection_statistics,
                                              b=b, k1=k1)
                     scores[docid] += score

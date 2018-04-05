@@ -48,13 +48,22 @@ def parse_and_process_file(file, params, document_lengths, collection_statistics
 
         for docno, text in data:
             dl = 0
+            unique_terms = set()
             for token in air_tokenize(text, params.case_folding, params.stop_words,
                                       params.stemming, params.lemmatization):
                 dl += 1
+                unique_terms.add(token)
                 yield (docno, token)
-            document_lengths[docno] = dl
-            collection_statistics.total_doc_length += dl
-            collection_statistics.num_documents += 1
+
+            if len(unique_terms) > 0:
+                # save document statistics
+                avgtf = dl / len(unique_terms)
+                document_lengths[docno] = (dl, avgtf)
+
+                # update collection statistics
+                collection_statistics.total_doc_length += dl
+                collection_statistics.sum_avgtf += avgtf
+                collection_statistics.num_documents += 1
 
 
 def create_index(doc_tokens):
@@ -128,7 +137,7 @@ def main():
         map_reduce(files, params)
 
     # save document lengths
-    with open(DOCUMENT_LENGTHS_PATH, "wb") as norm_file:
+    with open(DOCUMENT_STATISTICS_FILEPATH, "wb") as norm_file:
         marshal.dump(document_lengths, norm_file)
 
     # save statistics
