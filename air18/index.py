@@ -13,7 +13,7 @@ import shutil
 from air18.segments import segment_key, segment_keys, SegmentFile
 from air18.statistics import CollectionStatistics
 from air18.tokens import air_tokenize
-from air18.util import parse_json
+from air18.util import parse_json, parse_xml
 from air18.paths import *
 
 
@@ -38,10 +38,13 @@ def parse_args():
     return parser.parse_args()
 
 
-def parse_and_process_file(file, params, document_lengths, collection_statistics: CollectionStatistics, parse_function=parse_json):
+def parse_and_process_file(file, params, document_lengths, collection_statistics: CollectionStatistics):
     print("Parsing file {}".format(file))
     with open(file, encoding="iso-8859-1") as f:
-        data = parse_function(f)
+        if file.endswith(".json"):
+            data = parse_json(f)
+        else:
+            data = parse_xml(f)
 
         for docno, text in data:
             dl = 0
@@ -110,7 +113,7 @@ def main():
     document_lengths = {}
     statistics = CollectionStatistics()
     parse_fn = partial(parse_and_process_file, params=params, document_lengths=document_lengths,
-                       collection_statistics=statistics, parse_function=parse_json)
+                       collection_statistics=statistics)
     token_stream = itertools.chain.from_iterable(parse_fn(file=file) for file in files)
 
     shutil.rmtree(INDEX_BASE, ignore_errors=True)
