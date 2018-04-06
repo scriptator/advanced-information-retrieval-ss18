@@ -1,7 +1,10 @@
 import os
 
+from air18.paths import INDEX_BASE
 
-blocksize = 100
+
+blocksize = 100000
+index_index_blocksize = 100000
 
 
 def block_line(token, docid_tfs):
@@ -20,8 +23,7 @@ def from_block_line(line):
 
 class BlockFile:
     def __init__(self, blocknumber, mode="rb"):
-        os.makedirs("../indexed_data/", exist_ok=True)
-        self.filename = "../indexed_data/index_{}.txt".format(blocknumber)
+        self.filename = os.path.join(INDEX_BASE, "index_{}.p".format(blocknumber))
         self.blocknumber = blocknumber
         self.mode = mode
 

@@ -16,6 +16,7 @@ from air18 import score
 from air18.segments import segment_keys, SegmentFile
 from air18.topics import parse_topics
 from air18.paths import *
+from air18.blocks import from_block_line
 
 
 DEFAULT_TOPIC_FILE=os.path.join(os.path.dirname(__file__), "topicsTREC8Adhoc.txt")
@@ -108,8 +109,34 @@ def main():
             index = marshal.load(index_file)
 
     elif index_params.indexing_method == "spimi":
-        # TODO
         index = {}
+        with open(SPIMI_INDEX_PATH, "r") as index_file:
+            with open(SPIMI_INDEX_INDEX_PATH, "rb") as index_index_file:
+                index_index = pickle.load(index_index_file)
+
+                def get_index_file_blockpos(term):
+                    for (highest_token, file_pos) in index_index:
+                        if term <= highest_token:
+                            return file_pos
+
+                    return index_index[-1][1]
+
+                def find_term_postings(term):
+                    term_len = len(term)
+                    line = index_file.readline()
+                    while line[:term_len] < term:
+                        line = index_file.readline()
+
+                    if line[:term_len] == term:
+                        return from_block_line(line)[0]
+                    return None
+
+                for term in all_search_terms:
+                    file_blockpos = get_index_file_blockpos(term)
+                    index_file.seek(file_blockpos)
+                    postings = find_term_postings(term)
+                    if postings is not None:
+                        index[term] = postings
 
     # final score per document is sum of scores s_t,f occurring in query and document
     b = getattr(params, "b", None)
