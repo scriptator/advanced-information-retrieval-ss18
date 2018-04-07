@@ -12,10 +12,12 @@ import more_itertools
 import shutil
 import heapq
 
+from air18 import progress
+from air18.progress import ProgressBar
 from air18.segments import segment_key, segment_keys, SegmentFile
 from air18.statistics import CollectionStatistics
 from air18.tokens import air_tokenize
-from air18.util import parse_json, parse_xml
+from air18.parsing import parse_json, parse_xml
 from air18.paths import *
 from air18.blocks import BlockFile, blocksize, block_line, from_block_line, index_index_blocksize
 
@@ -137,16 +139,18 @@ def save_spimi_blocks(doc_tokens):
     block_indexes = (sorted(sorted_by_docid(create_index(block)), key=lambda i : i[0]) for block in blocks)
 
     num_blocks = 0
+    num_terms = 0
     for blockno, block_index in enumerate(block_indexes, 1):
         with BlockFile(blockno, mode="w") as index_file:
             for token, docid_tfs in block_index:
                 index_file.write(block_line(token, docid_tfs))
         num_blocks = blockno
+        num_terms += len(block_index)
 
-    return num_blocks
+    return num_blocks, num_terms
 
 
-def merge_spimi_blocks(num_blocks):
+def merge_spimi_blocks(num_blocks, num_terms):
 
     def merge_postings(p1, p2):
         def get_tf(docid_tf):
@@ -169,8 +173,10 @@ def merge_spimi_blocks(num_blocks):
     index_index = []
     last_index_file_tell = 0
 
+    progressbar = ProgressBar("Merging index blocks", num_terms)
     with open(SPIMI_INDEX_PATH, mode="w") as index_file:
         while blocks:
+            progressbar.next()
 
             # get posting lists of smallest token from blocks, merge them if more than one posting list
             min_token = min((posting[0] for posting in blocks.values()))
@@ -198,6 +204,7 @@ def merge_spimi_blocks(num_blocks):
                 last_index_file_tell = index_file.tell()
 
                 print("Merged block line {} into spimi index file".format(block_lines_written))
+    progressbar.finish()
 
     index_index.append(("", last_index_file_tell))
 
@@ -213,9 +220,9 @@ def merge_spimi_blocks(num_blocks):
 
 def spimi(files, params):
     token_stream, document_lengths, collection_statistics = create_token_stream(files, params)
-    num_blocks = save_spimi_blocks(token_stream)
+    num_blocks, num_terms = save_spimi_blocks(token_stream)
     print("Saved {} intermediate SPIMI blocks. Now merging".format(num_blocks))
-    merge_spimi_blocks(num_blocks)
+    merge_spimi_blocks(num_blocks, num_terms)
     return document_lengths, collection_statistics
 
 

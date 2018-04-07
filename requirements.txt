@@ -1,3 +1,4 @@
 nltk
 more-itertools
 PorterStemmer
+progressbar2

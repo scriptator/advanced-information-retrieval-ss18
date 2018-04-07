@@ -19,6 +19,8 @@ class SpimiTest(unittest.TestCase):
                                  ('1aa', 'fghijklmnop')), 15)
         doc_tokens = itertools.chain.from_iterable(iter)
 
-        num_blocks = save_spimi_blocks(doc_tokens)
-        merge_spimi_blocks(num_blocks)
+        num_blocks, num_terms = save_spimi_blocks(doc_tokens)
+
+        # FIXME this has side effects
+        merge_spimi_blocks(num_blocks, num_terms)
 

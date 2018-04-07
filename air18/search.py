@@ -14,12 +14,12 @@ from math import log
 
 from air18 import score
 from air18.segments import segment_keys, SegmentFile
-from air18.topics import parse_topics
+from air18.parsing import parse_topics
 from air18.paths import *
 from air18.blocks import from_block_line
 
 
-DEFAULT_TOPIC_FILE=os.path.join(os.path.dirname(__file__), "topicsTREC8Adhoc.txt")
+DEFAULT_TOPIC_FILE=os.path.join(os.path.dirname(__file__), "..", "resources", "topicsTREC8Adhoc.txt")
 
 
 def parse_args():

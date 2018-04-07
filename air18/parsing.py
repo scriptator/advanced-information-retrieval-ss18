@@ -1,6 +1,8 @@
 import functools
+import json
 import os
 import re
+from xml.etree import ElementTree as ET
 
 from air18.tokens import air_tokenize
 
@@ -22,3 +24,21 @@ def parse_topics(topics_file, case_folding=False, stop_words=False, stemming=Fal
                                      lemmatization=lemmatization)
     title_tokens = map(list, map(tokenize_fun, titles))
     return dict(zip(numbers, title_tokens))
+
+
+def parse_xml(file):
+    root = ET.fromstringlist(["<ROOT>", file.read(), "</ROOT>"])
+    for doc in root.findall("DOC"):
+        docno = doc.find("DOCNO").text.strip()
+        text = "\n".join(doc.find("TEXT").itertext())
+        # Documents that do not have a <TEXT> tag can be ignored
+        if text != "":
+            yield docno, text
+
+
+def parse_json(file):
+    doclist = json.load(file)
+    for doc in doclist:
+        # Documents that do not have a <TEXT> tag can be ignored
+        if doc["text"] is not None:
+            yield doc["docno"], doc["text"]
