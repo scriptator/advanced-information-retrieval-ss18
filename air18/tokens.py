@@ -1,6 +1,7 @@
 import re
 
-from nltk import PorterStemmer, WordNetLemmatizer
+import porterstemmer
+from nltk import WordNetLemmatizer
 
 
 def air_tokenize(text, case_folding=False, stop_words=False, stemming=False, lemmatization=False):
@@ -19,8 +20,8 @@ def air_tokenize(text, case_folding=False, stop_words=False, stemming=False, lem
 
     # stemming
     if stemming:
-        stemmer = PorterStemmer()
-        tokens = map(stemmer.stem, tokens)
+        stemmer = porterstemmer.Stemmer()
+        tokens = map(stemmer, tokens)
 
     # lemmatization
     if lemmatization:

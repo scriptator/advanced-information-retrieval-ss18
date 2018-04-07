@@ -1,2 +1,3 @@
 nltk
 more-itertools
+PorterStemmer
