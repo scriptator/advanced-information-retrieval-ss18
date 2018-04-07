@@ -1,25 +1,24 @@
 #!/usr/bin/env python3
 
 import argparse
+import collections
 import glob
+import heapq
 import marshal
+import pickle
+import shutil
 from functools import partial, reduce
 from itertools import chain, groupby
 
-import collections
-import pickle
 import more_itertools
-import shutil
-import heapq
 
-from air18 import progress
+from air18.blocks import BlockFile, BLOCK_SIZE, block_line, from_block_line
+from air18.parsing import parse_json, parse_xml
+from air18.paths import *
 from air18.progress import ProgressBar
 from air18.segments import segment_key, segment_keys, SegmentFile
 from air18.statistics import CollectionStatistics
 from air18.tokens import air_tokenize
-from air18.parsing import parse_json, parse_xml
-from air18.paths import *
-from air18.blocks import BlockFile, blocksize, block_line, from_block_line, index_index_blocksize
 
 
 def parse_args():
@@ -43,7 +42,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def parse_and_process_file(file, params, document_lengths, collection_statistics: CollectionStatistics):
+def parse_and_process_file(file, params, doc_stats, collection_statistics: CollectionStatistics):
     print("Parsing file {}".format(file))
     with open(file, encoding="iso-8859-1") as f:
         if file.endswith(".json"):
@@ -63,7 +62,7 @@ def parse_and_process_file(file, params, document_lengths, collection_statistics
             if len(unique_terms) > 0:
                 # save document statistics
                 avgtf = dl / len(unique_terms)
-                document_lengths[docno] = (dl, avgtf)
+                doc_stats[docno] = (dl, avgtf)
 
                 # update collection statistics
                 collection_statistics.total_doc_length += dl
@@ -72,12 +71,12 @@ def parse_and_process_file(file, params, document_lengths, collection_statistics
 
 
 def create_token_stream(files, params):
-    document_lengths = {}
+    doc_stats = {}
     statistics = CollectionStatistics()
-    parse_fn = partial(parse_and_process_file, params=params, document_lengths=document_lengths,
+    parse_fn = partial(parse_and_process_file, params=params, doc_stats=doc_stats,
                        collection_statistics=statistics)
     token_stream = chain.from_iterable(parse_fn(file=file) for file in files)
-    return token_stream, document_lengths, statistics
+    return token_stream, doc_stats, statistics
 
 
 def create_index(doc_tokens):
@@ -98,10 +97,10 @@ def create_index(doc_tokens):
 
 
 def air_map(file, params):
-    document_lengths = {}
+    doc_stats = {}
     collection_statistics = CollectionStatistics()
-    token_stream = parse_and_process_file(file, params, document_lengths, collection_statistics)
-    return token_stream, document_lengths, collection_statistics
+    token_stream = parse_and_process_file(file, params, doc_stats, collection_statistics)
+    return token_stream, doc_stats, collection_statistics
 
 
 def air_reduce(segment):
@@ -125,9 +124,8 @@ def to_docid(docno_tfs):
             to_docid.mappings[docno] = to_docid.max
         yield to_docid.mappings[docno], tf
 
-
-to_docid.mappings = dict()
-to_docid.max = 0
+    to_docid.mappings = dict()
+    to_docid.max = 0
 
 
 def sorted_by_docid(index):
@@ -135,8 +133,8 @@ def sorted_by_docid(index):
 
 
 def save_spimi_blocks(doc_tokens):
-    blocks = more_itertools.chunked(doc_tokens, blocksize)
-    block_indexes = (sorted(sorted_by_docid(create_index(block)), key=lambda i : i[0]) for block in blocks)
+    blocks = more_itertools.chunked(doc_tokens, BLOCK_SIZE)
+    block_indexes = (sorted(sorted_by_docid(create_index(block)), key=lambda i: i[0]) for block in blocks)
 
     num_blocks = 0
     num_terms = 0
@@ -151,15 +149,16 @@ def save_spimi_blocks(doc_tokens):
 
 
 def merge_spimi_blocks(num_blocks, num_terms):
-
     def merge_postings(p1, p2):
-        def get_tf(docid_tf):
+        def get_docid(docid_tf):
             return docid_tf[0]
 
-        merged_docid_tfs_with_dup = heapq.merge(p1[1], p2[1], key=get_tf)
-        merged_docid_tfs = [(docid, sum((tf for _, tf in docid_tfs)))
-                            for docid, docid_tfs in groupby(merged_docid_tfs_with_dup, key=get_tf)]
-        return p1[0], merged_docid_tfs
+        # Merges sorted inputs into a single sorted output.
+        # a posting is a tuple of docid, tf_td
+        merged_postings_with_dup = heapq.merge(p1[1], p2[1], key=get_docid)
+        merged_postings = [(docid, sum((tf for _, tf in docid_tfs)))
+                           for docid, docid_tfs in groupby(merged_postings_with_dup, key=get_docid)]
+        return p1[0], merged_postings
 
     block_files = {blockno: BlockFile(blockno, mode="r").open() for blockno in range(1, num_blocks + 1)}
 
@@ -168,11 +167,7 @@ def merge_spimi_blocks(num_blocks, num_terms):
     for no, file in block_files.items():
         blocks[no] = from_block_line(file.readline())
 
-    # variables used for creation of index over index
-    block_lines_written = 0
-    index_index = []
-    last_index_file_tell = 0
-
+    meta_index = {}
     progressbar = ProgressBar("Merging index blocks", num_terms)
     with open(SPIMI_INDEX_PATH, mode="w") as index_file:
         while blocks:
@@ -183,6 +178,9 @@ def merge_spimi_blocks(num_blocks, num_terms):
             min_token_blocknos = (no for no, posting in blocks.items() if posting[0] == min_token)
             min_token_postings = (posting for posting in blocks.values() if posting[0] == min_token)
             merged_posting = reduce(merge_postings, min_token_postings)
+
+            # add index file offset for term to meta index
+            meta_index[min_token] = index_file.tell()
 
             # save merged postings list to index file
             index_file.write(block_line(*merged_posting))
@@ -197,20 +195,11 @@ def merge_spimi_blocks(num_blocks, num_terms):
                     if blocks[no] is None:
                         del blocks[no]
 
-            # adding index over index entry
-            block_lines_written += 1
-            if block_lines_written % index_index_blocksize == 0:
-                index_index.append((merged_posting[0], last_index_file_tell))
-                last_index_file_tell = index_file.tell()
-
-                print("Merged block line {} into spimi index file".format(block_lines_written))
     progressbar.finish()
 
-    index_index.append(("", last_index_file_tell))
-
-    # save index over index
+    # save meta index
     with open(SPIMI_INDEX_INDEX_PATH, mode="wb") as index_index_file:
-        pickle.dump(index_index, index_index_file)
+        marshal.dump(meta_index, index_index_file)
 
     # remove intermediate SPIMI files
     for block_file in block_files.values():
@@ -236,6 +225,7 @@ def map_reduce(files, params):
         for doc_token in token_stream:
             segments[segment_key(doc_token)].append(doc_token)
 
+
         document_lengths_segment.update(document_lengths)
         collection_statistics_segment.append(collection_statistics)
 
@@ -256,23 +246,30 @@ def main():
     params = parse_args()
 
     # get all files in specified directories recursively
-    files = chain.from_iterable(
+    files = sorted(chain.from_iterable(
         glob.iglob('{}/**/*'.format(pattern), recursive=True)
-        for pattern in params.patterns)
+        for pattern in params.patterns))
 
+    print("Clearing old index files")
     shutil.rmtree(INDEX_BASE, ignore_errors=True)
     os.makedirs(INDEX_BASE, exist_ok=True)
 
+    print("Starting to index")
     if params.indexing_method == "simple":
-        document_lengths, statistics = simple(files, params)
-    if params.indexing_method == "spimi":
-        document_lengths, statistics = spimi(files, params)
-    if params.indexing_method == "map_reduce":
-        document_lengths, statistics = map_reduce(files, params)
+        doc_stats, statistics = simple(files, params)
+    elif params.indexing_method == "spimi":
+        doc_stats, statistics = spimi(files, params)
+    elif params.indexing_method == "map_reduce":
+        doc_stats, statistics = map_reduce(files, params)
+    else:
+        raise ValueError("Indexing method {} is unknown".format(params.indexing_method))
+
+    # --------------- Save statistics --------------
+    print("Saving statistics and settings to index directory")
 
     # save document lengths
-    with open(DOCUMENT_STATISTICS_FILEPATH, "wb") as norm_file:
-        marshal.dump(document_lengths, norm_file)
+    with open(DOCUMENT_STATISTICS_FILEPATH, "wb") as stat_file:
+        marshal.dump(doc_stats, stat_file)
 
     # save statistics
     with open(STATISTICS_FILEPATH, "wb") as stat_file:

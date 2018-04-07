@@ -67,9 +67,10 @@ def main():
     run_name = params.run_name
 
     # load index params to figure out how to process query tokens
+    print("Loading index")
     settings_file_path = SETTINGS_FILEPATH
     if not os.path.isfile(settings_file_path):
-        raise FileNotFoundError("Indexing settings file not found. Make sure"
+        raise FileNotFoundError("Indexing settings file not found. Make sure "
                                 "that indexing has finished successfully before you start a search.")
     with open(settings_file_path, "rb") as settings_file:
         index_params = pickle.load(settings_file)
@@ -111,34 +112,28 @@ def main():
     elif index_params.indexing_method == "spimi":
         index = {}
         with open(SPIMI_INDEX_PATH, "r") as index_file:
-            with open(SPIMI_INDEX_INDEX_PATH, "rb") as index_index_file:
-                index_index = pickle.load(index_index_file)
-
-                def get_index_file_blockpos(term):
-                    for (highest_token, file_pos) in index_index:
-                        if term <= highest_token:
-                            return file_pos
-
-                    return index_index[-1][1]
+            with open(SPIMI_INDEX_INDEX_PATH, "rb") as meta_index_file:
+                meta_index = marshal.load(meta_index_file)
 
                 def find_term_postings(term):
-                    term_len = len(term)
                     line = index_file.readline()
-                    while line[:term_len] < term:
-                        line = index_file.readline()
+                    if not line[:len(term)] == term:
+                        raise RuntimeError("Meta-Index for '{}' points to wrong term '{}'".format(term, line[:len(term)]))
+                    return from_block_line(line)[1]
 
-                    if line[:term_len] == term:
-                        return from_block_line(line)[0]
-                    return None
-
-                for term in all_search_terms:
-                    file_blockpos = get_index_file_blockpos(term)
+                # iterate over sorted query terms to get the ideal disk access pattern
+                for term in sorted(all_search_terms):
+                    file_blockpos = meta_index[term]
                     index_file.seek(file_blockpos)
                     postings = find_term_postings(term)
                     if postings is not None:
                         index[term] = postings
 
+    else:
+        raise ValueError("Encountered unsupported index type {}".format(index_params.indexing_method))
+
     # final score per document is sum of scores s_t,f occurring in query and document
+    print("Starting to score documents")
     b = getattr(params, "b", None)
     k1 = getattr(params, "k1", None)
     for topic_num, terms in topics.items():
@@ -151,10 +146,10 @@ def main():
                 idf_t = log(collection_statistics.num_documents / df_t)
                 for docid, tf in postings:
                     doc_length, doc_avgtf = doc_stats[docid]
-                    score = scoring_function(tf_td=tf, idf_t=idf_t, dl=doc_length, avgtf=doc_avgtf,
+                    doc_score = scoring_function(tf_td=tf, idf_t=idf_t, dl=doc_length, avgtf=doc_avgtf,
                                              collection_statistics=collection_statistics,
                                              b=b, k1=k1)
-                    scores[docid] += score
+                    scores[docid] += doc_score
         scores = sorted(scores.items(), key=operator.itemgetter(1), reverse=True)
         print_output(topic_num, scores, run_name, max_docs_per_topic)
 
