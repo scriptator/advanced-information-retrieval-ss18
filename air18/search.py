@@ -33,6 +33,7 @@ def parse_args():
                         help="Maximum number of documents to output per topic")
     parser.add_argument("--run-name", default="DefaultRun")
     parser.add_argument("--topic", default=None, help="Query only for one given topic instead of all")
+    parser.add_argument("--debug", "-d", action="store_true", help="Print debug output")
 
     subparsers = parser.add_subparsers(dest="similarity_function", title="similarity function")
     subparsers.required = True
@@ -67,7 +68,8 @@ def main():
     run_name = params.run_name
 
     # load index params to figure out how to process query tokens
-    print("Loading index")
+    if params.debug:
+        print("Loading index")
     settings_file_path = SETTINGS_FILEPATH
     if not os.path.isfile(settings_file_path):
         raise FileNotFoundError("Indexing settings file not found. Make sure "
@@ -133,7 +135,8 @@ def main():
         raise ValueError("Encountered unsupported index type {}".format(index_params.indexing_method))
 
     # final score per document is sum of scores s_t,f occurring in query and document
-    print("Starting to score documents")
+    if params.debug:
+        print("Starting to score documents")
     b = getattr(params, "b", None)
     k1 = getattr(params, "k1", None)
     for topic_num, terms in topics.items():

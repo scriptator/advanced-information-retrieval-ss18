@@ -103,3 +103,4 @@ ENV/
 .idea
 *.iml
 indexed_data
+evaluation_results
