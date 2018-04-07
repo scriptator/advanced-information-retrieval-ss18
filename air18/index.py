@@ -3,7 +3,6 @@
 import argparse
 import glob
 import marshal
-import os
 from functools import partial, reduce
 from itertools import chain, groupby
 
@@ -70,6 +69,15 @@ def parse_and_process_file(file, params, document_lengths, collection_statistics
                 collection_statistics.num_documents += 1
 
 
+def create_token_stream(files, params):
+    document_lengths = {}
+    statistics = CollectionStatistics()
+    parse_fn = partial(parse_and_process_file, params=params, document_lengths=document_lengths,
+                       collection_statistics=statistics)
+    token_stream = chain.from_iterable(parse_fn(file=file) for file in files)
+    return token_stream, document_lengths, statistics
+
+
 def create_index(doc_tokens):
     # simple index without major performance considerations
     index = collections.defaultdict(list)
@@ -87,41 +95,44 @@ def create_index(doc_tokens):
     return dict(index)
 
 
-def segmentize(file, params):
-    segments = collections.defaultdict(list)
-
-    for doc_token in parse_and_process_file(file, params):
-        segments[segment_key(doc_token)].append(doc_token)
-
-    return segments
+def air_map(file, params):
+    document_lengths = {}
+    collection_statistics = CollectionStatistics()
+    token_stream = parse_and_process_file(file, params, document_lengths, collection_statistics)
+    return token_stream, document_lengths, collection_statistics
 
 
 def air_reduce(segment):
     return create_index(segment)
 
 
-def simple(token_stream, params):
+def simple(files, params):
+    token_stream, document_lengths, collection_statistics = create_token_stream(files, params)
     index = create_index(token_stream)
 
     with open(SIMPLE_INDEX_PATH, mode="wb") as index_file:
         marshal.dump(index, index_file)
 
+    return document_lengths, collection_statistics
+
+
+def to_docid(docno_tfs):
+    for docno, tf in docno_tfs:
+        if docno not in to_docid.mappings:
+            to_docid.max += 1
+            to_docid.mappings[docno] = to_docid.max
+        yield to_docid.mappings[docno], tf
+
+
+to_docid.mappings = dict()
+to_docid.max = 0
+
+
+def sorted_by_docid(index):
+    return ((token, to_docid(docno_tfs)) for token, docno_tfs in index.items())
+
 
 def save_spimi_blocks(doc_tokens):
-
-    def to_docid(docno_tfs):
-        for docno, tf in docno_tfs:
-            if docno not in to_docid.mappings:
-                to_docid.max += 1
-                to_docid.mappings[docno] = to_docid.max
-            yield to_docid.mappings[docno], tf
-
-    to_docid.mappings = dict()
-    to_docid.max = 0
-
-    def sorted_by_docid(index):
-        return ((token, to_docid(docno_tfs)) for token, docno_tfs in index.items())
-
     blocks = more_itertools.chunked(doc_tokens, blocksize)
     block_indexes = (sorted(sorted_by_docid(create_index(block)), key=lambda i : i[0]) for block in blocks)
 
@@ -148,10 +159,12 @@ def merge_spimi_blocks(num_blocks):
 
     block_files = {blockno: BlockFile(blockno, mode="r").open() for blockno in range(1, num_blocks + 1)}
 
+    # load first line from all blocks
     blocks = dict()
     for no, file in block_files.items():
         blocks[no] = from_block_line(file.readline())
 
+    # variables used for creation of index over index
     block_lines_written = 0
     index_index = []
     last_index_file_tell = 0
@@ -159,13 +172,16 @@ def merge_spimi_blocks(num_blocks):
     with open(SPIMI_INDEX_PATH, mode="w") as index_file:
         while blocks:
 
+            # get posting lists of smallest token from blocks, merge them if more than one posting list
             min_token = min((posting[0] for posting in blocks.values()))
             min_token_blocknos = (no for no, posting in blocks.items() if posting[0] == min_token)
             min_token_postings = (posting for posting in blocks.values() if posting[0] == min_token)
             merged_posting = reduce(merge_postings, min_token_postings)
 
+            # save merged postings list to index file
             index_file.write(block_line(*merged_posting))
 
+            # reload line from all written out blocks and remove EOF blocks from dictionary
             for no in min_token_blocknos:
                 blocks[no] = None
 
@@ -175,6 +191,7 @@ def merge_spimi_blocks(num_blocks):
                     if blocks[no] is None:
                         del blocks[no]
 
+            # adding index over index entry
             block_lines_written += 1
             if block_lines_written % index_index_blocksize == 0:
                 index_index.append((merged_posting[0], last_index_file_tell))
@@ -184,6 +201,7 @@ def merge_spimi_blocks(num_blocks):
 
     index_index.append(("", last_index_file_tell))
 
+    # save index over index
     with open(SPIMI_INDEX_INDEX_PATH, mode="wb") as index_index_file:
         pickle.dump(index_index, index_index_file)
 
@@ -193,23 +211,38 @@ def merge_spimi_blocks(num_blocks):
         os.remove(block_file.name)
 
 
-def spimi(token_stream, params):
+def spimi(files, params):
+    token_stream, document_lengths, collection_statistics = create_token_stream(files, params)
     num_blocks = save_spimi_blocks(token_stream)
     print("Saved {} intermediate SPIMI blocks. Now merging".format(num_blocks))
     merge_spimi_blocks(num_blocks)
+    return document_lengths, collection_statistics
 
 
-def map_reduce(token_stream, params):
+def map_reduce(files, params):
     segments = collections.defaultdict(list)
-    for doc_token in token_stream:
-        segments[segment_key(doc_token)].append(doc_token)
+    document_lengths_segment = dict()
+    collection_statistics_segment = list()
+    for token_stream, document_lengths, collection_statistics in (air_map(file, params) for file in files):
 
-    segment_indexes = {seg_key : air_reduce(segment) for seg_key, segment in segments.items()}
+        # shuffle map results to segments
+        for doc_token in token_stream:
+            segments[segment_key(doc_token)].append(doc_token)
+
+        document_lengths_segment.update(document_lengths)
+        collection_statistics_segment.append(collection_statistics)
+
+    # document_lengths and collection_statistics merge could be included in same air_reduce function as separate case
+    # but was not for simplicity reason
+    segment_indexes = {seg_key: air_reduce(segment) for seg_key, segment in segments.items()}
+    collection_statistics = reduce(CollectionStatistics.merge, collection_statistics_segment)
 
     # save indexes, simple strategy: using pickle
     for seg_key in segment_keys:
         with SegmentFile(seg_key, mode="wb") as segment_file:
             pickle.dump(segment_indexes.get(seg_key), segment_file)
+
+    return document_lengths_segment, collection_statistics
 
 
 def main():
@@ -220,22 +253,15 @@ def main():
         glob.iglob('{}/**/*'.format(pattern), recursive=True)
         for pattern in params.patterns)
 
-    document_lengths = {}
-    statistics = CollectionStatistics()
-    parse_fn = partial(parse_and_process_file, params=params, document_lengths=document_lengths,
-                       collection_statistics=statistics)
-    token_stream = chain.from_iterable(parse_fn(file=file) for file in files)
-
     shutil.rmtree(INDEX_BASE, ignore_errors=True)
     os.makedirs(INDEX_BASE, exist_ok=True)
 
     if params.indexing_method == "simple":
-        simple(token_stream, params)
+        document_lengths, statistics = simple(files, params)
     if params.indexing_method == "spimi":
-        spimi(token_stream, params)
+        document_lengths, statistics = spimi(files, params)
     if params.indexing_method == "map_reduce":
-        # TODO currently our map phase uses only one block, try to orient more on slide 57 and also calculate collection statistics during the map phase in parallel and merge afterwards
-        map_reduce(files, params)
+        document_lengths, statistics = map_reduce(files, params)
 
     # save document lengths
     with open(DOCUMENT_STATISTICS_FILEPATH, "wb") as norm_file:

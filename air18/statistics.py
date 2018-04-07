@@ -14,3 +14,9 @@ class CollectionStatistics:
 
         # actually this would not belong here but it is needed to optimize scoring
         self.b_verboseness_fission = 1 - (1 / self.mavgtf)
+
+    def merge(self, other):
+        num_documents = self.num_documents + other.num_documents
+        total_doc_length = self.total_doc_length + other.total_doc_length
+        sum_avgtf = self.sum_avgtf + other.sum_avgtf
+        return CollectionStatistics(num_documents, total_doc_length, sum_avgtf)
