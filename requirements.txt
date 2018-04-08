@@ -2,3 +2,4 @@ nltk
 more-itertools
 PorterStemmer
 progressbar2
+scipy

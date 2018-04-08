@@ -21,3 +21,8 @@ echo
 echo "Testing BM25 Verboseness Fission"
 python3 -m air18.search bm25va > evaluation_results/bm25va.trec
 trec_eval -q -m map -c resources/qrels.trec8.adhoc.parts1-5 evaluation_results/bm25va.trec | tee evaluation_results/evaluation_bm25va.txt
+echo
+
+# Significance Testing
+echo "Testing Significance of differences"
+python3 significance.py | tee evaluation_results/significance_test.txt
