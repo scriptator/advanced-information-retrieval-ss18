@@ -11,7 +11,7 @@ def air_tokenize(text, case_folding=False, stop_words=False, stemming=False, lem
 
     # case folding, simple strategy: all words to lowercase
     if case_folding:
-        tokens = map(lambda token: token.lower(), tokens)
+        tokens = map(str.lower, tokens)
 
     # removing stop words
     if stop_words:

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import argparse
+import operator
+
 import collections
 import glob
 import heapq
@@ -155,9 +157,9 @@ def merge_spimi_blocks(num_blocks, num_terms):
 
         # Merges sorted inputs into a single sorted output.
         # a posting is a tuple of docid, tf_td
-        merged_postings_with_dup = heapq.merge(p1[1], p2[1], key=get_docid)
+        merged_postings_with_dup = heapq.merge(p1[1], p2[1], key=operator.itemgetter(0))
         merged_postings = [(docid, sum((tf for _, tf in docid_tfs)))
-                           for docid, docid_tfs in groupby(merged_postings_with_dup, key=get_docid)]
+                           for docid, docid_tfs in groupby(merged_postings_with_dup, key=operator.itemgetter(0))]
         return p1[0], merged_postings
 
     block_files = {blockno: BlockFile(blockno, mode="r").open() for blockno in range(1, num_blocks + 1)}
