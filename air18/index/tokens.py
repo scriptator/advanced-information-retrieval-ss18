@@ -15,7 +15,7 @@ def air_tokenize(text, case_folding=False, stop_words=False, stemming=False, lem
 
     # removing stop words
     if stop_words:
-        from air18.stopwords import stop_words_en
+        from air18.index.stopwords import stop_words_en
         tokens = filter(lambda token: token not in stop_words_en, tokens)
 
     # stemming

@@ -1,6 +1,6 @@
 from math import log
 
-from air18.statistics import CollectionStatistics
+from air18.index.statistics import CollectionStatistics
 
 
 def tf_idf(tf_td, idf_t, collection_statistics: CollectionStatistics, **kwargs):

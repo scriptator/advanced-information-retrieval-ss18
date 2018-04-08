@@ -10,11 +10,11 @@ import sys
 from collections import defaultdict
 from math import log
 
-from air18 import score
-from air18.segments import segment_keys, SegmentFile
-from air18.parsing import parse_topics
-from air18.paths import *
-from air18.blocks import from_block_line
+from air18.search import score
+from air18.index.map_reduce import segment_keys, SegmentFile
+from air18.util.parsing import parse_topics
+from air18.util.paths import *
+from air18.index.spimi import from_block_line
 
 
 def parse_args():

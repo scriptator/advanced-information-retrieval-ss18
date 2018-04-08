@@ -1,7 +1,7 @@
 import unittest
 import itertools
 
-from air18.index import save_spimi_blocks, merge_spimi_blocks
+from air18.index.spimi import save_spimi_blocks, merge_spimi_blocks
 
 
 class SpimiTest(unittest.TestCase):

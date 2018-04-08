@@ -1,10 +1,9 @@
 import functools
 import json
-import os
 import re
 from xml.etree import ElementTree as ET
 
-from air18.tokens import air_tokenize
+from air18.index.tokens import air_tokenize
 
 NUMBER_REGEX = r"<num> Number: (4\d\d)"
 TITLE_REGEX = r"<title> (.*)"
