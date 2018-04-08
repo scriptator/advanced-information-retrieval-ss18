@@ -51,9 +51,9 @@ def simple(files, params):
 
 def spimi(files, params):
     token_stream, doc_stats, docid_docno_mapping, collection_statistics = create_token_stream(files, params)
-    num_blocks, num_terms = save_spimi_blocks(token_stream)
+    num_blocks = save_spimi_blocks(token_stream)
     print("Saved {} intermediate SPIMI blocks. Now merging".format(num_blocks))
-    merge_spimi_blocks(num_blocks, num_terms)
+    merge_spimi_blocks(num_blocks)
     return doc_stats, docid_docno_mapping, collection_statistics
 
 

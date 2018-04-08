@@ -52,18 +52,16 @@ def save_spimi_blocks(doc_tokens):
     block_indexes = (sorted(create_index(block).items(), key=operator.itemgetter(0)) for block in blocks)
 
     num_blocks = 0
-    num_terms = 0
     for blockno, block_index in enumerate(block_indexes, 1):
         with BlockFile(blockno, mode="w") as index_file:
             for token, docid_tfs in block_index:
                 index_file.write(block_line(token, docid_tfs))
         num_blocks = blockno
-        num_terms += len(block_index)
 
-    return num_blocks, num_terms
+    return num_blocks
 
 
-def merge_spimi_blocks(num_blocks, num_terms):
+def merge_spimi_blocks(num_blocks):
     def merge_postings(p1, p2):
         # Merges sorted inputs into a single sorted output.
         # a posting is a tuple of docid, tf_td
@@ -80,16 +78,16 @@ def merge_spimi_blocks(num_blocks, num_terms):
         blocks[no] = from_block_line(file.readline())
 
     meta_index = {}
-    progressbar = ProgressBar("Merging index blocks", num_terms)
+    progressbar = ProgressBar("Merging index blocks")
     with open(SPIMI_INDEX_PATH, mode="w") as index_file:
         while blocks:
-            progressbar.next()
-
             # get posting lists of smallest token from blocks, merge them if more than one posting list
             min_token = min((posting[0] for posting in blocks.values()))
             min_token_blocknos = (no for no, posting in blocks.items() if posting[0] == min_token)
             min_token_postings = (posting for posting in blocks.values() if posting[0] == min_token)
             merged_posting = reduce(merge_postings, min_token_postings)
+
+            progressbar.update(min_token)
 
             # add index file offset for term to meta index
             meta_index[min_token] = index_file.tell()
