@@ -16,7 +16,7 @@ def from_block_line(line):
 
     split_line = line.split(":")
     token = split_line[0]
-    docid_tfs = (tuple(int(t) for t in docid_tf.split("-")) for docid_tf in split_line[1].split(","))
+    docid_tfs = [tuple(int(t) for t in docid_tf.split("-")) for docid_tf in split_line[1].split(",")]
     return token, docid_tfs
 
 

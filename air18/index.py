@@ -2,6 +2,8 @@
 
 import argparse
 import operator
+from collections import Iterable
+from typing import Tuple, Dict, Union
 
 import collections
 import glob
@@ -44,7 +46,24 @@ def parse_args():
     return parser.parse_args()
 
 
-def parse_and_process_file(file, params, doc_stats, collection_statistics: CollectionStatistics):
+def parse_and_process_file(file, params, docid_docno_mapping: Union[Dict[int, str], None],
+                           doc_stats: Dict[int, Tuple],
+                           collection_statistics: CollectionStatistics):
+    """
+    Parse and tokenize file.
+
+    :param file: path to the input file
+    :param params: argparse params
+    :param docid_docno_mapping: a dictionary containing the mapping, or None if mapping should be disabled
+    :param doc_stats: a dictionary filled with statistics per document
+    :param collection_statistics:
+    :return: nothing, yield Tuples (docid, token)
+    """
+    if docid_docno_mapping is None:
+        map_docid = False
+    else:
+        map_docid = True
+
     print("Parsing file {}".format(file))
     with open(file, encoding="iso-8859-1") as f:
         if file.endswith(".json"):
@@ -53,18 +72,24 @@ def parse_and_process_file(file, params, doc_stats, collection_statistics: Colle
             data = parse_xml(f)
 
         for docno, text in data:
+            if map_docid:
+                docid = collection_statistics.num_documents
+                docid_docno_mapping[docid] = docno
+            else:
+                docid = docno
+
             dl = 0
             unique_terms = set()
             for token in air_tokenize(text, params.case_folding, params.stop_words,
                                       params.stemming, params.lemmatization):
                 dl += 1
                 unique_terms.add(token)
-                yield (docno, token)
+                yield (docid, token)
 
             if len(unique_terms) > 0:
                 # save document statistics
                 avgtf = dl / len(unique_terms)
-                doc_stats[docno] = (dl, avgtf)
+                doc_stats[docid] = (dl, avgtf)
 
                 # update collection statistics
                 collection_statistics.total_doc_length += dl
@@ -74,15 +99,17 @@ def parse_and_process_file(file, params, doc_stats, collection_statistics: Colle
 
 def create_token_stream(files, params):
     doc_stats = {}
+    docid_docno_mapping = {}
     statistics = CollectionStatistics()
-    parse_fn = partial(parse_and_process_file, params=params, doc_stats=doc_stats,
+    parse_fn = partial(parse_and_process_file, params=params,
+                       docid_docno_mapping=docid_docno_mapping,
+                       doc_stats=doc_stats,
                        collection_statistics=statistics)
     token_stream = chain.from_iterable(parse_fn(file=file) for file in files)
-    return token_stream, doc_stats, statistics
+    return token_stream, doc_stats, docid_docno_mapping, statistics
 
 
-def create_index(doc_tokens):
-    # simple index without major performance considerations
+def create_index(doc_tokens: Tuple[Union[str, int], str]):
     index = collections.defaultdict(list)
 
     # invert step: add everything to a list
@@ -101,7 +128,9 @@ def create_index(doc_tokens):
 def air_map(file, params):
     doc_stats = {}
     collection_statistics = CollectionStatistics()
-    token_stream = parse_and_process_file(file, params, doc_stats, collection_statistics)
+    token_stream = parse_and_process_file(file, params, docid_docno_mapping=None,
+                                          doc_stats=doc_stats,
+                                          collection_statistics=collection_statistics)
     return token_stream, doc_stats, collection_statistics
 
 
@@ -110,33 +139,18 @@ def air_reduce(segment):
 
 
 def simple(files, params):
-    token_stream, document_lengths, collection_statistics = create_token_stream(files, params)
+    token_stream, doc_stats, docid_docno_mapping, collection_statistics = create_token_stream(files, params)
     index = create_index(token_stream)
 
     with open(SIMPLE_INDEX_PATH, mode="wb") as index_file:
         marshal.dump(index, index_file)
 
-    return document_lengths, collection_statistics
-
-
-def to_docid(docno_tfs):
-    for docno, tf in docno_tfs:
-        if docno not in to_docid.mappings:
-            to_docid.max += 1
-            to_docid.mappings[docno] = to_docid.max
-        yield to_docid.mappings[docno], tf
-
-    to_docid.mappings = dict()
-    to_docid.max = 0
-
-
-def sorted_by_docid(index):
-    return ((token, to_docid(docno_tfs)) for token, docno_tfs in index.items())
+    return doc_stats, docid_docno_mapping, collection_statistics
 
 
 def save_spimi_blocks(doc_tokens):
     blocks = more_itertools.chunked(doc_tokens, BLOCK_SIZE)
-    block_indexes = (sorted(sorted_by_docid(create_index(block)), key=lambda i: i[0]) for block in blocks)
+    block_indexes = (sorted(create_index(block).items(), key=operator.itemgetter(0)) for block in blocks)
 
     num_blocks = 0
     num_terms = 0
@@ -152,9 +166,6 @@ def save_spimi_blocks(doc_tokens):
 
 def merge_spimi_blocks(num_blocks, num_terms):
     def merge_postings(p1, p2):
-        def get_docid(docid_tf):
-            return docid_tf[0]
-
         # Merges sorted inputs into a single sorted output.
         # a posting is a tuple of docid, tf_td
         merged_postings_with_dup = heapq.merge(p1[1], p2[1], key=operator.itemgetter(0))
@@ -210,11 +221,11 @@ def merge_spimi_blocks(num_blocks, num_terms):
 
 
 def spimi(files, params):
-    token_stream, document_lengths, collection_statistics = create_token_stream(files, params)
+    token_stream, doc_stats, docid_docno_mapping, collection_statistics = create_token_stream(files, params)
     num_blocks, num_terms = save_spimi_blocks(token_stream)
     print("Saved {} intermediate SPIMI blocks. Now merging".format(num_blocks))
     merge_spimi_blocks(num_blocks, num_terms)
-    return document_lengths, collection_statistics
+    return doc_stats, docid_docno_mapping, collection_statistics
 
 
 def map_reduce(files, params):
@@ -258,22 +269,27 @@ def main():
 
     print("Starting to index")
     if params.indexing_method == "simple":
-        doc_stats, statistics = simple(files, params)
+        doc_stats, docid_docno_mapping, statistics = simple(files, params)
     elif params.indexing_method == "spimi":
-        doc_stats, statistics = spimi(files, params)
+        doc_stats, docid_docno_mapping, statistics = spimi(files, params)
     elif params.indexing_method == "map_reduce":
         doc_stats, statistics = map_reduce(files, params)
+        docid_docno_mapping = None
     else:
         raise ValueError("Indexing method {} is unknown".format(params.indexing_method))
 
-    # --------------- Save statistics --------------
+    # --------------- Save auxiliary index files --------------
     print("Saving statistics and settings to index directory")
 
-    # save document lengths
+    # save docid -> docno mapping
+    with open(DOCID_DOCNO_MAPPING, "wb") as mapping_file:
+        marshal.dump(docid_docno_mapping, mapping_file)
+
+    # save document statistics
     with open(DOCUMENT_STATISTICS_FILEPATH, "wb") as stat_file:
         marshal.dump(doc_stats, stat_file)
 
-    # save statistics
+    # save collection statistics
     with open(STATISTICS_FILEPATH, "wb") as stat_file:
         pickle.dump(statistics, stat_file)
 

@@ -88,9 +88,13 @@ def main():
         collection_statistics = pickle.load(stat_file)
         collection_statistics.finalize()    # precompute values
 
-    # load document lengths
+    # load document statistics
     with open(DOCUMENT_STATISTICS_FILEPATH, "rb") as norm_file:
         doc_stats = marshal.load(norm_file)
+
+    # load document statistics
+    with open(DOCID_DOCNO_MAPPING, "rb") as mapping_file:
+        docid_docno_mapping = marshal.load(mapping_file)
 
     # load indexes and keep only the relevant parts in memory
     if index_params.indexing_method == "map_reduce":
@@ -149,6 +153,11 @@ def main():
                                              b=b, k1=k1)
                     scores[docid] += doc_score
         scores = sorted(scores.items(), key=operator.itemgetter(1), reverse=True)
+
+        # transform docids back to docnos if mapping exists
+        if docid_docno_mapping is not None:
+            scores = map(lambda docid_score: (docid_docno_mapping[docid_score[0]], docid_score[1]), scores)
+
         print_output(topic_num, scores, run_name, max_docs_per_topic)
 
 
