@@ -26,7 +26,8 @@ def parse_args():
                         default=DEFAULT_TOPIC_FILE)
     parser.add_argument("--show", type=int, default=1000,
                         help="Maximum number of documents to report per topic")
-    parser.add_argument("--run-name", default="DefaultRun", help="Arbitrary string ")
+    parser.add_argument("--run-name", default="DefaultRun",
+                        help="Arbitrary string which will be contained in the TREC output as an identifier of the run")
     parser.add_argument("--topic", default=None, help="Query only for one given topic instead of all")
     parser.add_argument("--debug", "-d", action="store_true", help="Print debug output")
 
