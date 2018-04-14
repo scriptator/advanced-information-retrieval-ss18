@@ -21,12 +21,12 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--topics-file", "-t", type=argparse.FileType(),
-                        help="the topic file containing the query",
+                        help="The topic file in TREC's format containing queries",
                         required=False,
                         default=DEFAULT_TOPIC_FILE)
     parser.add_argument("--show", type=int, default=1000,
-                        help="Maximum number of documents to output per topic")
-    parser.add_argument("--run-name", default="DefaultRun")
+                        help="Maximum number of documents to report per topic")
+    parser.add_argument("--run-name", default="DefaultRun", help="Arbitrary string ")
     parser.add_argument("--topic", default=None, help="Query only for one given topic instead of all")
     parser.add_argument("--debug", "-d", action="store_true", help="Print debug output")
 
@@ -62,13 +62,18 @@ def main():
     max_docs_per_topic = params.show
     run_name = params.run_name
 
-    # load index params to figure out how to process query tokens
+    # load settings and parameters from index directory and validate
     if params.debug:
         print("Loading index")
     settings_file_path = SETTINGS_FILEPATH
     if not os.path.isfile(settings_file_path):
-        raise FileNotFoundError("Indexing settings file not found. Make sure "
-                                "that indexing has finished successfully before you start a search.")
+        error_msg = "ERROR: Indexing settings file {} not found. Make sure that " \
+                    "indexing has finished successfully before you start a search.".format(settings_file_path)
+        if params.debug:
+            raise FileNotFoundError(error_msg)
+        else:
+            print(error_msg, file=sys.stderr)
+            exit(1)
     with open(settings_file_path, "rb") as settings_file:
         index_params = pickle.load(settings_file)
     topics = parse_topics(params.topics_file, index_params.case_folding,
@@ -80,8 +85,6 @@ def main():
         except KeyError:
             print("ERROR: Requested topic {} does not exist in given topic file".format(params.topic), file=sys.stderr)
             exit(1)
-
-    all_search_terms = set(itertools.chain.from_iterable(topics.values()))
 
     # load collection statistics
     with open(STATISTICS_FILEPATH, "rb") as stat_file:
@@ -95,6 +98,9 @@ def main():
     # load document statistics
     with open(DOCID_DOCNO_MAPPING, "rb") as mapping_file:
         docid_docno_mapping = marshal.load(mapping_file)
+
+    # set of all terms which are contained in any query we need
+    all_search_terms = set(itertools.chain.from_iterable(topics.values()))
 
     # load indexes and keep only the relevant parts in memory
     if index_params.indexing_method == "map_reduce":

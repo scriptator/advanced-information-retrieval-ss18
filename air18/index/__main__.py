@@ -23,13 +23,13 @@ def parse_args():
 
     parser.add_argument("patterns",
                         nargs="+",
-                        help="the directory (recursively) containing files or a single file in XML format to index")
-    parser.add_argument("--case-folding", action="store_true", help="apply case folding")
-    parser.add_argument("--stop-words", action="store_true", help="remove stop words")
+                        help="One or several glob patterns matching directories which contain original TREC or JSON files")
+    parser.add_argument("--case-folding", action="store_true", help="Apply case folding")
+    parser.add_argument("--stop-words", action="store_true", help="Remove stop words")
 
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--stemming", action="store_true", help="apply stemming")
-    group.add_argument("--lemmatization", action="store_true", help="apply lemmatization")
+    group.add_argument("--stemming", action="store_true", help="Apply Porter Stemmer")
+    group.add_argument("--lemmatization", action="store_true", help="Apply lemmatization from NLTK")
 
     parser.add_argument("--indexing-method",
                         choices=["simple", "spimi", "map_reduce"],
