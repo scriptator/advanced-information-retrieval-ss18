@@ -5,8 +5,10 @@ from nltk import WordNetLemmatizer
 
 
 def air_tokenize(text, case_folding=False, stop_words=False, stemming=False, lemmatization=False):
-    # tokenize, very simple strategy: split on all non-alphanumeric characters
-    tokens = re.split('[^a-zA-Z0-9]', text)
+    # tokenize, simple strategy:
+    # split on all non-alphanumeric characters
+    # plus some adjustments for special word handling (email, strings with hyphens)
+    tokens = re.split('[^a-zA-Z0-9.@]|\.[^a-zA-Z0-9]|\.$', text)
     tokens = filter(None, tokens)
 
     # case folding, simple strategy: all words to lowercase
